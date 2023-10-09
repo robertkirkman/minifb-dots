@@ -1,6 +1,6 @@
 add_executable(minifbproject main.c)
 
-# Link MiniFB to your project:
+# Link MiniFB
 target_link_libraries(${PROJECT_NAME}
     minifb
 )
