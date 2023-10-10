@@ -40,11 +40,11 @@ int main(void)
     uint32_t *framebuffer = malloc(WIDTH * HEIGHT * sizeof(uint32_t));
     checkCondition(framebuffer != NULL, "malloc()", __LINE__);
 
-    // Initialize framebuffer with white, then allow drawing
+    // Initialize framebuffer with white and capture dots
     clearFramebuffer(framebuffer);
     DotListNode *dotList = captureDots(framebuffer);
 
-    // Reinitialize framebuffer with white, then play back the drawing
+    // Reinitialize framebuffer with white and play back the drawing
     clearFramebuffer(framebuffer);
     playbackDots(framebuffer, dotList);
 
@@ -70,15 +70,26 @@ void checkCondition(_Bool condition, const char *func, int line)
 // Draw a circular dot into the given framebuffer
 void drawDot(uint32_t *fb, Dot p)
 {
-    for (int i = p.x - p.radius; i < p.x + p.radius && i < WIDTH; i++)
+    const int x = p.x;
+    const int y = p.y;
+    const int r = p.radius;
+    const int rSquared = r * r;
+
+    for (int i = x - r; i <= x + r && i < WIDTH; i++)
     {
-        for (int j = p.y - p.radius; j < p.y + p.radius && j < HEIGHT; j++)
+        for (int j = y - r; j <= y + r && j < HEIGHT; j++)
         {
-            double dist = sqrt(pow((double)i - (double)p.x, 2) + pow((double)j - (double)p.y, 2));
-            if (dist <= p.radius && i >= 0 && j >= 0)
+            if (i >= 0 && j >= 0)
             {
-                uint32_t color = (uint32_t)dist;
-                fb[i + WIDTH * j] = MFB_ARGB(0xFF, 0x00, color, 0x00);
+                const int dx = i - x;
+                const int dy = j - y;
+                const int distSquared = dx * dx + dy * dy;
+
+                if (distSquared <= rSquared)
+                {
+                    uint32_t color = distSquared;
+                    fb[i + WIDTH * j] = MFB_ARGB(0xFF, 0x00, color, 0x00);
+                }
             }
         }
     }
@@ -181,7 +192,8 @@ void freeDots(DotListNode *head)
 // Initialize the framebuffer with white
 void clearFramebuffer(uint32_t *fb)
 {
-    for (size_t i = 0; i < WIDTH * HEIGHT; i++)
+    const size_t numPixels = WIDTH * HEIGHT;
+    for (size_t i = 0; i < numPixels; i++)
     {
         fb[i] = WHITE;
     }
