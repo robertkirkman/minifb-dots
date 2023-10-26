@@ -31,6 +31,7 @@ void drawDot(uint32_t *fb, Dot p);
 void addDot(struct mfb_window *window, uint32_t *fb, DotListNode **head, int radius, clock_t timestamp);
 DotListNode *captureDots(uint32_t *fb);
 void playbackDots(uint32_t *fb, DotListNode *head);
+void printDots(DotListNode *head);
 void freeDots(DotListNode *head);
 void clearFramebuffer(uint32_t *fb);
 
@@ -47,6 +48,24 @@ int main(void)
     // Reinitialize framebuffer with white and play back the drawing
     clearFramebuffer(framebuffer);
     playbackDots(framebuffer, dotList);
+
+    // Print dotList in c-struct literal format
+    printDots(dotList);
+
+    // preallocate and preinitialize a DotList for smiley face :)
+    const size_t smileyDotCount = 461;
+    DotListNode smileyDotList[] = {
+#include <dots.inc>
+    };
+    // link each element together to form the singly-linked-list
+    for (size_t i = 0; i < smileyDotCount - 1; i++) 
+    {
+        smileyDotList[i].next = &smileyDotList[i + 1];
+    }
+
+    // Reinitialize framebuffer with white and play back the drawing of smiley face :)
+    clearFramebuffer(framebuffer);
+    playbackDots(framebuffer, smileyDotList);
 
     // Free memory
     freeDots(dotList);
@@ -175,6 +194,23 @@ void playbackDots(uint32_t *fb, DotListNode *currentNode)
             break;
         }
     } while (mfb_wait_sync(window));
+}
+
+// print dots in a portable C-struct plaintext format
+void printDots(DotListNode *head)
+{
+    while (head != NULL)
+    {
+        printf("{.data = {.x = %d,\n"
+               "          .y = %d,\n"
+               "          .radius = %d},\n"
+               " .timestamp = %ld},\n", 
+               head->data.x, 
+               head->data.y, 
+               head->data.radius, 
+               head->timestamp);
+        head = head->next;
+    }
 }
 
 // Free all memory used by dots
