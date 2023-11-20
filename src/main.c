@@ -53,7 +53,7 @@ int main(void)
     printDots(dotList);
 
     // preallocate and preinitialize a DotList for smiley face :)
-    const size_t smileyDotCount = 461;
+    const size_t smileyDotCount = 1;
     DotListNode smileyDotList[] = {
 #include <dots.inc>
     };
