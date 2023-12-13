@@ -1,6 +1,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdint.h>
+#include <string.h>
+#include <ctype.h>
 #include <math.h>
 #include <time.h>
 #include <MiniFB.h>
@@ -17,39 +19,124 @@ typedef struct
     int x, y, radius;
 } Dot;
 
-// Define a struct for a linked list node containing Dot data
-typedef struct DotListNode
+typedef struct
 {
-    struct DotListNode *next;
     Dot data;
-    clock_t timestamp;
-} DotListNode;
+    int velx, vely;
+} Player;
 
 // Function prototypes
 void checkCondition(_Bool condition, const char *func, int line);
 void drawDot(uint32_t *fb, Dot p);
-void addDot(struct mfb_window *window, uint32_t *fb, DotListNode **head, int radius, clock_t timestamp);
-DotListNode *captureDots(uint32_t *fb);
-void playbackDots(uint32_t *fb, DotListNode *head);
-void freeDots(DotListNode *head);
+void checkCollide(Player *p);
 void clearFramebuffer(uint32_t *fb);
+
+#define integer_str_len 11
+#define longfloat_str_len 26
+#define combined_str_len (integer_str_len + longfloat_str_len - 1)
+
+unsigned digitCount(int integer, double longfloat) {
+    unsigned index = 0;
+    char integer_str[combined_str_len] =  { 0 },
+         longfloat_str[longfloat_str_len] = { 0 };
+    if (integer != 0) {
+        snprintf(integer_str, integer_str_len, "%d", integer);
+    }
+    if (longfloat != 0) {
+        snprintf(longfloat_str, longfloat_str_len, "%lf", longfloat);
+    }
+    index = strlen(integer_str);
+    for (unsigned i = 0; i < longfloat_str_len; i++) {
+        if (isdigit(longfloat_str[i])) {
+            index++;
+        }
+    }
+    return index;
+}
 
 int main(void)
 {
+    int a = 1234;
+    double b = 362837.12899800;
+    printf("%u\n", digitCount(a, 0));
+    printf("%u\n", digitCount(0, b));
+    printf("%u\n", digitCount(a, b));
+
+
+
+
     // Allocate framebuffer
     uint32_t *framebuffer = malloc(WIDTH * HEIGHT * sizeof(uint32_t));
     checkCondition(framebuffer != NULL, "malloc()", __LINE__);
 
     // Initialize framebuffer with white and capture dots
     clearFramebuffer(framebuffer);
-    DotListNode *dotList = captureDots(framebuffer);
 
-    // Reinitialize framebuffer with white and play back the drawing
-    clearFramebuffer(framebuffer);
-    playbackDots(framebuffer, dotList);
+    Player p;
+    p.data.x = WIDTH / 2;
+    p.data.y = HEIGHT / 2;
+    p.data.radius = 20;
+    p.velx = 0;
+    p.vely = 0;
+
+    int state;
+    struct mfb_window *window = mfb_open_ex("dot", WIDTH, HEIGHT, WF_RESIZABLE);
+    checkCondition(window != NULL, "mfb_open_ex()", __LINE__);
+    do
+    {
+        int leftArrow = mfb_get_key_buffer(window)[KB_KEY_LEFT];
+        int rightArrow = mfb_get_key_buffer(window)[KB_KEY_RIGHT];
+        int spaceBar = mfb_get_key_buffer(window)[KB_KEY_SPACE];
+        
+        // left and right movement
+        if (leftArrow)
+        {
+            p.velx = -10;
+        }
+        else if (rightArrow)
+        {
+            p.velx = 10;
+        }
+        else
+        {
+            p.velx = 0;
+        }
+        
+        // jump movement
+        if (spaceBar && p.data.y > HEIGHT - p.data.radius - 2)
+        {
+            p.vely = -40;
+        }
+        
+        // gravity movement
+        if (p.data.y < HEIGHT - p.data.radius - 2)
+        {
+            p.vely = p.vely + 2;
+        }
+        else if (!spaceBar)
+        {
+            // bounce with friction
+            p.vely = -p.vely + 2;
+        }
+        
+
+        checkCollide(&p);
+
+        p.data.x += p.velx;
+        p.data.y += p.vely;
+
+        clearFramebuffer(framebuffer);
+        drawDot(framebuffer, p.data);
+
+        state = mfb_update_ex(window, framebuffer, WIDTH, HEIGHT);
+        if (state < 0)
+        {
+            window = NULL;
+            break;
+        }
+    } while (mfb_wait_sync(window));
 
     // Free memory
-    freeDots(dotList);
     free(framebuffer);
 
     return EXIT_SUCCESS;
@@ -95,97 +182,39 @@ void drawDot(uint32_t *fb, Dot p)
     }
 }
 
-// Capture, append a dot to the DotList, and render the dot on the screen
-void addDot(struct mfb_window *window, uint32_t *fb, DotListNode **head, int radius, clock_t timestamp)
+// Check for player collision with edge of window
+void checkCollide(Player *p)
 {
-    DotListNode *last = NULL;
-    while (*head != NULL)
-    {
-        last = *head;
-        *head = (*head)->next;
-    }
-    *head = malloc(sizeof(DotListNode));
-    checkCondition(*head != NULL, "malloc()", __LINE__);
-    (*head)->data.x = mfb_get_mouse_x(window);
-    (*head)->data.y = mfb_get_mouse_y(window);
-    (*head)->data.radius = radius;
-    (*head)->timestamp = timestamp;
-    (*head)->next = NULL;
-    if (last != NULL)
-    {
-        last->next = *head;
-    }
-    drawDot(fb, (*head)->data);
-}
+    const int x = p->data.x;
+    const int y = p->data.y;
+    const int r = p->data.radius;
+    const int rSquared = r * r;
 
-// Loop indefinitely and capture all dots created during the loop, including their "timestamp"
-DotListNode *captureDots(uint32_t *fb)
-{
-    int state, size = 5;
-    DotListNode *head = NULL, *currentNode = NULL;
-    clock_t start = clock();
-    struct mfb_window *window = mfb_open_ex("recording dots...", WIDTH, HEIGHT, WF_RESIZABLE);
-    checkCondition(window != NULL, "mfb_open_ex()", __LINE__);
-    do
+    for (int i = x - r; i <= x + r; i++)
     {
-        int leftMouseButton = mfb_get_mouse_button_buffer(window)[MOUSE_BTN_1];
-        int rightMouseButton = mfb_get_mouse_button_buffer(window)[MOUSE_BTN_2];
-        int spaceBar = mfb_get_key_buffer(window)[KB_KEY_SPACE];
-        size += leftMouseButton - rightMouseButton;
-        if (size < 1)
+        for (int j = y - r; j <= y + r; j++)
         {
-            size = 1;
+            if (i < 0)
+            {
+                p->data.x = p->data.radius;
+                p->velx = abs(p->velx);
+            }
+            if (j < 0)
+            {
+                p->data.y = p->data.radius;
+                p->vely = abs(p->vely);
+            }
+            if (i >= WIDTH)
+            {
+                p->data.x = WIDTH - p->data.radius;
+                p->velx = -abs(p->velx);
+            }
+            if (j >= HEIGHT)
+            {
+                p->data.y = HEIGHT - p->data.radius;
+                p->vely = -abs(p->vely);
+            }
         }
-        if (spaceBar)
-        {
-            addDot(window, fb, &currentNode, size, clock() - start);
-        }
-        if (head == NULL && currentNode != NULL)
-        {
-            head = currentNode;
-        }
-        state = mfb_update_ex(window, fb, WIDTH, HEIGHT);
-        if (state < 0)
-        {
-            window = NULL;
-            break;
-        }
-    } while (mfb_wait_sync(window));
-    return head;
-}
-
-// Draw all dots in the correct order with the correct delays between them
-void playbackDots(uint32_t *fb, DotListNode *currentNode)
-{
-    int state;
-    clock_t start = clock();
-    struct mfb_window *window = mfb_open_ex("displaying recorded dots...", WIDTH, HEIGHT, WF_RESIZABLE);
-    checkCondition(window != NULL, "mfb_open_ex()", __LINE__);
-    do
-    {
-        if (currentNode != NULL && clock() >= start + currentNode->timestamp)
-        {
-            drawDot(fb, currentNode->data);
-            currentNode = currentNode->next;
-        }
-        state = mfb_update_ex(window, fb, WIDTH, HEIGHT);
-        if (state < 0)
-        {
-            window = NULL;
-            break;
-        }
-    } while (mfb_wait_sync(window));
-}
-
-// Free all memory used by dots
-void freeDots(DotListNode *head)
-{
-    DotListNode *tmp;
-    while (head != NULL)
-    {
-        tmp = head->next;
-        free(head);
-        head = tmp;
     }
 }
 
